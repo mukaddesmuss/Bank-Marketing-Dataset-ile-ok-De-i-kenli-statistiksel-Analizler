@@ -1,0 +1,366 @@
+---
+title: "ÇDA Proje"
+author: "Mukaddes Muş"
+date: "2026-01-02"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(readxl)
+library(VIM)
+library(MASS) 
+library(ISLR)
+library(MVN)
+library(tidyverse)
+library(ggpubr)
+library(dplyr)
+library(tidyr)
+library(car)
+library(moments)
+library(magrittr)
+library(rstatix)
+library(broom)
+library(haven)
+library(heplots)
+library(effectsize)
+
+```
+
+
+```{r}
+library(readxl)
+veri <- read.csv("C:/Users/User/Downloads/banks.csv",
+                 sep = ";",
+                 header = TRUE)
+names(veri)
+veri <- as.data.frame(veri)
+summary(veri)
+```
+
+```{r}
+veri$balance_kat <- cut(
+  veri$balance,
+  breaks = quantile(veri$balance, probs = c(0, .25, .50, .75, 1), na.rm = TRUE),
+  labels = c("dusuk", "Orta", "yuksek", "cok Yuksek"),
+  include.lowest = TRUE
+)
+
+veri$housing<-factor(veri$housing,levels = c("no","yes"),labels= c(0,1))
+veri$education<-factor(veri$education,levels = c("primary","secondary","tertiary","unknown"),labels= c(1,2,3,4))
+
+```
+
+```{r}
+str(veri)
+```
+
+```{r}
+install.packages("MVN")
+library(MVN)
+packageVersion("MVN")
+normallik <- veri[, c(1,12,13)]
+```
+
+
+```{r}
+str(normallik)
+str(veri)
+names(veri)
+```
+
+```{r}
+library(biotools)
+boxM( veri[,c("age","duration", "campaign")], veri[,"balance_kat"])
+```
+
+
+```{r}
+library(corrplot)
+corrplot(cor(veri[,c(1,6,12,13,14,15)]))
+```
+
+
+## MANOVA - TEK YÖNLÜ
+```{r}
+
+veri_manova <- manova(cbind(age,duration,campaign) ~ balance,data=veri)
+summary(veri_manova, test = "Hotelling-Lawley")
+summary(veri_manova, test = "Wilks")
+summary(veri_manova, test = "Pillai")
+summary(veri_manova, test = "Roy")
+```
+
+```{r}
+etasq(veri_manova, test="Wilks")
+```
+
+```{r}
+install.packages("car")
+library(car)
+leveneTest(age ~ balance_kat, data=veri,center=mean)
+leveneTest(duration ~ balance_kat, data=veri,center=mean)
+leveneTest(campaign ~ balance_kat, data=veri,center=mean)
+```
+
+
+```{r}
+## MANOVA Çift Yönlü
+
+veri_cift_manova <- manova(cbind(age,duration,campaign) ~ balance_kat*housing,data=veri)
+summary(veri_cift_manova, test = "Wilks")
+```
+
+
+```{r}
+install.packages("rstatix")
+library(rstatix)
+summary.aov(veri_cift_manova)
+etasq(aov(age~balance_kat*housing, data=veri))
+etasq(aov(duration~balance_kat*housing, data=veri))
+etasq(aov(campaign~balance_kat*housing, data=veri))
+```
+```
+
+##TBA
+
+
+```{r}
+# 1) Korelasyon Matrisi
+# =========================
+
+num_vars <- c("age","duration","balance","campaign","pdays","previous")
+veri_num <- veri[ , num_vars]
+
+
+library(GGally)
+ggpairs(veri_num)
+
+
+library(Hmisc)
+rcorr(as.matrix(veri_num), type = "pearson")
+
+library(corrplot)
+corrplot(cor(veri_num))
+
+```
+
+```{r}
+# Gerekli paket
+library(dplyr)
+
+# my_data senin ana veri setin olsun
+my_data <- veri%>%
+  mutate(across(starts_with("sqrt"), ~ {
+    # 1. Veriyi metne çevir (garanti olsun)
+    val <- as.character(.x)
+    # 2. Sadece virgülleri noktaya çevir
+    val <- gsub(",", ".", val)
+    # 3. Sayıya çevir
+    as.numeric(val)
+  }))
+
+# Kontrol: Şimdi yapıya bakalım
+str(my_data %>% select(starts_with("sqrt")))
+```
+
+
+
+
+
+```{r}
+#Kaiser-Meyer-Olkin (KMO) Örneklem Yeterliliği Ölçüsü ve Bartlett Küresellik Testi
+library(psych)
+library(factoextra)
+
+library(dplyr)
+library(stringr)
+
+veri_pca_hazirlik <- veri[, c("age", "balance", "duration","campaign", "previous","pdays")]
+
+KMO(veri_pca_hazirlik)
+
+
+```
+
+
+```{r}
+#Bartlett Küresellik Testi(Bartlett's Test of Spherecity) 
+cortest.bartlett(cor(veri_pca_hazirlik),nrow(veri)) #Bartlett test 
+
+```
+
+```{r}
+fit.pca <- prcomp( ~., data=veri_pca_hazirlik, scale=TRUE) # korelasyon matrisi icin scale=TRUE seçildi
+fit.pca$rotation ## yükler
+
+```
+
+```{r}
+fit.pca$x   #scores
+```
+
+```{r}
+#Bilesen sayisina karar vermek
+summary(fit.pca) # varyans açıklama oranları 
+
+```
+
+```{r}
+(fit.pca$sdev)^2 #ozdegerler
+```
+
+```{r}
+library(factoextra)
+scree <- fviz_eig(fit.pca)
+scree
+
+```
+
+```{r}
+fit.pca$rotation[,1:3] 
+```
+
+```{r}
+faktor_yukleri<-t(fit.pca$rotation)*fit.pca$sdev # koklambda ile carpılmıs hali bu da bizi faktore goturuyor
+faktor_yukleri #asal bileşenler
+
+```
+
+```{r}
+row.names(fit.pca$x)<-veri$bankadir #skorları isimlendirme 
+```
+
+```{r}
+veri$comp1=fit.pca$x[,1] 
+veri$comp2=fit.pca$x[,2]
+veri$comp3=fit.pca$x[,3]
+
+```
+
+```{r}
+veri$index=veri$comp1+veri$comp2+veri$comp3
+indeks<-sort(veri$index, decreasing = F)
+head(indeks)
+
+```
+
+
+```{r}
+library(factoextra)
+fviz_pca_var(fit.pca,col.var="steelblue",
+             repel = TRUE # Avoid text overlapping
+             )
+
+```
+
+###FAKTOR ANALİZİ
+
+
+```{r}
+fa_kokl <- principal(veri[, c("age", "balance", "duration","campaign", "previous","pdays")], nfactors =3, rotate = "none")
+
+print(fa_kokl$loadings, digits=3, cutoff=.3, sort=TRUE) 
+```
+
+```{r}
+fa_kokl$communality 
+
+plot(fa_kokl$values, type="b", main="ScreePlot", xlab="Number of Factors", ylab="Eigenvalues")
+```
+
+```{r}
+fa_kokl <- principal(veri[, c("age", "balance", "duration","campaign", "previous","pdays")], nfactors =3, rotate = "varimax")
+print(fa_kokl$loadings, digits=3, cutoff=.3, sort=TRUE)
+```
+
+```{r}
+fa.diagram(fa_kokl)
+```
+
+```{r}
+fyuk2 <- fa_kokl$loadings[,1:2]
+factor.plot(fyuk2, cut=0.5, labels=rownames(fa_kokl$loadings),font=2, cex=0.8)
+```
+ 
+###Diskriminant Analizi - İki Gruplu
+
+```{r}
+install.packages("MASS")
+library(MASS)
+
+lda_data <- lda(y ~ age + balance + duration + campaign + previous + pdays, data=veri)
+lda_pred <- predict(lda_data)
+lda_pred$class
+
+```
+
+```{r}
+ldahist(lda_pred$x, g = veri$y) 
+
+```
+
+```{r}
+disk_tablo<-table(veri$y,lda_pred$class)
+disk_tablo
+```
+
+```{r}
+classrate<-sum(diag(disk_tablo))/sum(disk_tablo)
+classrate
+```
+
+
+##ikili lojistik regreson
+
+```{r}
+
+library(ggplot2)
+library(reshape2)
+
+library(Hmisc)
+rcorr(as.matrix(veri_num), type = "pearson")
+
+library(corrplot)
+corrplot(cor(veri_num))
+
+```
+
+
+```{r}
+
+veri_scaled <- scale(veri[, c("age","balance","duration","campaign","pdays","previous")])
+
+# Hiyerarsik Kümeleme
+# Euclidean uzaklık matrisi
+d <- dist(veri[, c("age","balance","duration","campaign","pdays","previous")], method = "euclidean")
+
+fit <- hclust(d, method="complete") # method="average" , "ward.D2", "single", "centroid"
+plot(fit) # Dendogram çizimi
+library(factoextra)
+
+```
+
+##KUMELEME ANALİZİ
+```{r}
+library(dendextend)
+
+d <- dist(veri[, c("age","balance","duration","campaign","pdays","previous")], method = "euclidean")
+fit <- hclust(d, method="ward.D") 
+dend<-as.dendrogram(fit) 
+plot(dend)
+plot(color_branches(dend, k=3))
+```
+
+```{r}
+fviz_nbclust(veri[, c("age","balance","duration","campaign","pdays","previous")], kmeans, method = "wss")
+```
+
+```{r}
+fviz_nbclust(veri[, c("age","balance","duration","campaign","pdays","previous")], kmeans, method = "silhouette")
+```
+
